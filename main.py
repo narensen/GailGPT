@@ -162,7 +162,7 @@ if groq_api_key:
     category_embeddings = embedding_model.encode(hr_it_event_keywords, convert_to_tensor=True)
 
     # Initialize RAG components
-    text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
+    text_splitter = RecursiveCharacterTextSplitter(chunk_size=3000, chunk_overlap=500)
     embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
     
     # Initialize FAISS-CPU
