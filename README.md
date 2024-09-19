@@ -1,6 +1,3 @@
-Here’s the updated `README.md` content with the environment variables section removed, and the instructions simplified for a single-file setup.
-
-```md
 # GailGPT: Intelligent Enterprise Assistant
 
 GailGPT is an intelligent chatbot assistant designed to assist users with queries related to **HR**, **IT**, and **Company Events**. This application uses **LangChain**, **FAISS**, and **Sentence Transformers** to deliver relevant information and can handle document uploads for file-based question-answering. Additionally, the app incorporates an OTP-based email authentication system to secure access.
