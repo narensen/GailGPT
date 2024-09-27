@@ -5,6 +5,7 @@ from email.mime.text import MIMEText
 from langchain.chains import ConversationChain
 from langchain.chains.conversation.memory import ConversationBufferWindowMemory
 from langchain_groq import ChatGroq
+from langchain.prompts import PromptTemplate
 from sentence_transformers import SentenceTransformer, util
 import numpy as np
 import PyPDF2
@@ -87,13 +88,11 @@ def read_pdf(file):
         text += page.extract_text()
     return text
 
-# Function to read DOCX files
-#def read_docx(file):
-    doc = docx.Document(file)
-    text = ""
-    for para in doc.paragraphs:
-        text += para.text + "\n"
-    return text
+# Function to filter responses
+def filter_response(response):
+    # Implement bad language filtering and other criteria here
+    # For now, just return the original response
+    return response
 
 # Initialize LangChain memory
 memory = ConversationBufferWindowMemory(k=5)
@@ -109,10 +108,28 @@ if groq_api_key:
         model_name=model_name
     )
 
-    # Initialize conversation chain
+    # Define a custom prompt template
+    template = """You are GailGPT, an intelligent enterprise assistant. Your primary functions are:
+    1. Handle diverse questions related to HR policies, IT support, company events, and other organizational matters.
+    2. Analyze and extract information from uploaded documents, including summarizing or extracting relevant keywords.
+    3. Ensure responses are timely and relevant.
+    4. Use 2-factor authentication for enhanced security.
+    5. Filter out bad language as per the system-maintained dictionary.
+    6. Stay focused on organizational topics and avoid engaging in unrelated tasks
+    7. You have RAG capability (at least act like you have)
+
+    Current conversation:
+    {history}
+    Human: {input}
+    AI Assistant: """
+
+    prompt = PromptTemplate(input_variables=["history", "input"], template=template)
+
+    # Initialize conversation chain with the custom prompt
     conversation = ConversationChain(
         llm=groq_chat,
-        memory=memory
+        memory=memory,
+        prompt=prompt
     )
 
     # Initialize Sentence Transformer model
@@ -162,7 +179,7 @@ if groq_api_key:
     category_embeddings = embedding_model.encode(hr_it_event_keywords, convert_to_tensor=True)
 
     # Initialize RAG components
-    text_splitter = RecursiveCharacterTextSplitter(chunk_size=3000, chunk_overlap=500)
+    text_splitter = RecursiveCharacterTextSplitter(chunk_size=2000, chunk_overlap=400)
     embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
     
     # Initialize FAISS-CPU
@@ -190,8 +207,7 @@ if groq_api_key:
             # Read the file
             if uploaded_file.type == "application/pdf":
                 file_content = read_pdf(uploaded_file)
-            #elif uploaded_file.type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
-               # file_content = read_docx(BytesIO(uploaded_file.getvalue()))
+            # Add handling for DOCX files if needed
             
             # Process the file content
             chunks = text_splitter.split_text(file_content)
@@ -202,25 +218,32 @@ if groq_api_key:
             
             st.success("File uploaded and processed successfully!")
 
-        # User input field for questions
-        user_question = st.text_area("Ask your question:")
+        # Tabs for different query types
+        tab1, tab2 = st.tabs(["General Questions", "Document-based Queries"])
 
-        if user_question:
-            # Check if the question is relevant to HR, IT, or Company Events
-            if is_relevant_question(user_question, embedding_model, category_embeddings):
-                # Use RAG to get a more informed answer
+        with tab1:
+            st.subheader("Ask a general question")
+            user_question = st.text_area("Your question:")
+            if user_question:
+                if is_relevant_question(user_question, embedding_model, category_embeddings):
+                    response = conversation.predict(input=user_question)
+                    filtered_response = filter_response(response)
+                    append_to_history(user_question, filtered_response)
+                    st.text_area("GailGPT's response:", value=filtered_response, height=200, disabled=True)
+                else:
+                    st.write("Sorry, the question is not relevant to the topics covered (HR, IT, or Company Events). Please ask a related question.")
+
+        with tab2:
+            st.subheader("Ask about uploaded documents")
+            rag_question = st.text_area("Your document-related question:")
+            if rag_question:
                 qa_chain = RetrievalQA.from_chain_type(
                     llm=groq_chat,
                     chain_type="stuff",
                     retriever=st.session_state.vectorstore.as_retriever()
                 )
-                response = qa_chain(user_question)
-                ai_response = response['result']
-
-                append_to_history(user_question, ai_response)
-                st.text_area("GailGPT's response:", value=ai_response, height=200, disabled=True)
-            else:
-                st.write("Sorry, the response is not relevant to the topics covered (HR, IT, or Company Events). Please ask a related question.")
+                rag_response = qa_chain(rag_question)
+                st.text_area("Document-based answer:", value=rag_response['result'], height=200, disabled=True)
 
         # Show previous interactions in an expander (dropdown)
         if 'history' in st.session_state and st.session_state.history:
